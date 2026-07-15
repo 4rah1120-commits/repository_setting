@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -270,8 +271,9 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict]:
 
 def upload_to_notion(markdown: str, title: str) -> str:
     token = read_env("NOTION_TOKEN")
-    parent_page_id = read_env("NOTION_PARENT_PAGE_ID")
+    database_id = read_env("NOTION_PARENT_PAGE_ID")
     blocks = markdown_to_notion_blocks(markdown)
+    lesson_date = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
     response = requests.post(
         "https://api.notion.com/v1/pages",
         headers={
@@ -280,17 +282,21 @@ def upload_to_notion(markdown: str, title: str) -> str:
             "Notion-Version": "2022-06-28",
         },
         json={
-            "parent": {"type": "page_id", "page_id": parent_page_id},
+            "parent": {"type": "database_id", "database_id": database_id},
             "properties": {
-                "title": {
+                "이름": {
                     "title": [{"type": "text", "text": {"content": title}}]
-                }
+                },
+                "수업 일시": {"date": {"start": lesson_date}},
             },
             "children": blocks,
         },
         timeout=120,
     )
-    response.raise_for_status()
+    if not response.ok:
+        raise RuntimeError(
+            f"Notion API error {response.status_code}: {response.text}"
+        )
     return response.json().get("url", "")
 
 
