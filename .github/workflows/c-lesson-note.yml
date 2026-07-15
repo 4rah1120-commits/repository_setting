@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - master
+    paths-ignore:
+      - ".github/**"
+      - "scripts/**"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
