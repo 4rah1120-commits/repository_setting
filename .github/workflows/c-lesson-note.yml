@@ -1,0 +1,62 @@
+name: C Lesson Break Note
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-note:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout my code
+        uses: actions/checkout@v4
+        with:
+          path: current
+          fetch-depth: 2
+
+      - name: Checkout reference student code
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: woojaeoh/Physical_AI_C_language
+          path: refs/student
+
+      - name: Checkout instructor code
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: heartha21/class_c_202607
+          ref: master
+          path: refs/instructor
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: python -m pip install requests
+
+      - name: Generate and upload Notion note
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4.1' }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: python current/scripts/generate_lesson_note.py
+
+      - name: Upload generated markdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-lesson-note
+          path: current/generated-notes/*.md
