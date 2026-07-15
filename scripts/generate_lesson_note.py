@@ -300,15 +300,26 @@ def upload_to_notion(markdown: str, title: str) -> str:
     return response.json().get("url", "")
 
 
+def extract_title_keyword(markdown: str) -> str:
+    lines = [line.strip() for line in markdown.splitlines()]
+    for index, line in enumerate(lines):
+        if line.startswith("## 0."):
+            for candidate in lines[index + 1:]:
+                if candidate and not candidate.startswith("#"):
+                    keyword = re.sub(r"[*_`>#]", "", candidate).strip()
+                    return keyword[:45].rstrip(" .,;:-")
+    return "이번 교시 핵심 내용"
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     repo = read_env("GITHUB_REPOSITORY", required=False, default="unknown/repo").split("/")[-1]
     sha = read_env("GITHUB_SHA", required=False, default="unknown")
     short_sha = sha[:7] if sha != "unknown" else datetime.now(timezone.utc).strftime("%H%M%S")
-    title = f"C언어 쉬는시간 정리노트 - {repo} - {short_sha}"
-
     prompt = build_prompt()
     note = call_openai(prompt)
+    keyword = extract_title_keyword(note)
+    title = f"{repo} 쉬는시간 정리 - {keyword}"
 
     note_path = OUT_DIR / f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{repo}_{short_sha}.md"
     note_path.write_text(note, encoding="utf-8")
