@@ -88,8 +88,12 @@ jobs:
           git -C automation config user.name "github-actions[bot]"
           git -C automation config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C automation add automation-state.json
-          git -C automation commit -m "Record processed public repository commit"
-          git -C automation push
+          if git -C automation diff --cached --quiet; then
+            echo "Processed commit is already recorded."
+          else
+            git -C automation commit -m "Record processed public repository commit"
+            git -C automation push
+          fi
 
       - name: Upload generated markdown
         if: steps.source.outputs.changed == 'true'
