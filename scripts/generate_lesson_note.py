@@ -155,24 +155,67 @@ def build_prompt() -> str:
 - 배열은 [세로][가로] 기준으로 설명
 - 쉬는시간용이므로 너무 길게 늘리지 말고, 바로 볼 수 있게 핵심 위주로 작성
 
-반드시 포함할 섹션:
-# C언어 쉬는시간 정리노트
+반드시 아래 서식과 순서를 사용한다:
+# C/C++ 쉬는시간 변경분 정리노트
+
+> 대상: 쉬는시간에 빠르게 읽고 방금 바뀐 코드를 이해하기 위한 정리
+
 ## 0. 이번 교시 한 줄 요약
-## 1. 이번 push에서 바뀐 내용
-## 2. 새로 추가된 코드
-## 3. 수정 또는 삭제된 코드
-## 4. 변경 후 코드 흐름
-## 5. 이번 변경에서 배운 C언어 개념
+
+---
+
+## 1. 이번 push에서 실제로 한 작업 순서
+- 작업 순서를 `text` 코드 블록 안에 번호로 정리한다.
+
+---
+
+## 2. 이전 코드와 지금 코드 비교
+- `비교 항목 | 이전 | 지금 | 의미` 표를 사용한다.
+
+---
+
+## 3. 핵심 변경 코드 흐름
+- 꼭 필요한 짧은 C/C++ 코드 블록을 먼저 보여준다.
+- 이어서 `코드 | 의미` 표와 실행 순서 `text` 코드 블록을 사용한다.
+
+---
+
+## 4. 이번 변경에서 배운 C언어 개념
+- `개념 | 이번 코드에서 쓰인 위치 | 내가 이해할 방식` 표를 사용한다.
+
+---
+
+## 5. 내 코드 현재 상태 점검
+- `점검 항목 | 현재 상태 | 판단` 표를 사용한다.
+
+---
+
 ## 6. 강사님/우수 학생 코드와 비교
+- `비교 항목 | 내 코드 | 참고 코드 | 보완 제안` 표를 사용한다.
+
+---
+
 ## 7. 미완성 코드 또는 놓친 부분
+- 각 항목을 작은 제목으로 나누고 `현재 상태`, `문제 이유`, `수정 방향` 순서로 쓴다.
+
+---
+
 ## 8. 다음 교시 시작 전 체크
+- 마크다운 체크박스 2~4개를 사용한다.
+
+---
+
 ## 9. 마지막 한 문장 복습
+- 인용문 한 줄로 마무리한다.
 
 작성 규칙:
 - 아래 `이번 push 변경분`의 `+` 줄과 `-` 줄을 최우선 근거로 사용한다.
 - 변경된 파일명, 함수명, 변수명과 바뀐 동작을 구체적으로 적는다.
 - 추가되지 않은 기존 기능을 이번에 배운 내용처럼 설명하지 않는다.
 - 변경분이 작으면 노트도 짧게 작성한다. 분량을 채우려고 전체 코드를 반복 설명하지 않는다.
+- 각 섹션 사이에는 `---` 구분선을 넣는다.
+- 긴 문단보다 표, 짧은 목록, 코드 블록을 우선 사용한다.
+- 빈 표나 형식만 있는 항목은 만들지 않는다.
 
 저장소 정보:
 - repo: {repo}
@@ -252,6 +295,41 @@ def notion_text_block(kind: str, text: str) -> dict:
     }
 
 
+def parse_markdown_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def notion_table_block(table_lines: list[str]) -> dict | None:
+    rows = [parse_markdown_table_row(line) for line in table_lines]
+    if len(rows) < 2:
+        return None
+    separator = rows[1]
+    if not all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in separator):
+        return None
+    data_rows = [rows[0], *rows[2:]]
+    width = max(len(row) for row in data_rows)
+    children = []
+    for row in data_rows:
+        padded = row + [""] * (width - len(row))
+        children.append(
+            {
+                "object": "block",
+                "type": "table_row",
+                "table_row": {"cells": [notion_rich_text(cell) for cell in padded]},
+            }
+        )
+    return {
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": width,
+            "has_column_header": True,
+            "has_row_header": False,
+            "children": children,
+        },
+    }
+
+
 def markdown_to_notion_blocks(markdown: str) -> list[dict]:
     blocks: list[dict] = []
     paragraph: list[str] = []
@@ -259,8 +337,10 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict]:
     code_lang = "plain text"
     code_lines: list[str] = []
 
-    for raw_line in markdown.splitlines():
-        line = raw_line.rstrip()
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index].rstrip()
 
         if line.startswith("```"):
             if in_code:
@@ -283,14 +363,34 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict]:
                 code_lang = line.strip("`").strip() or "plain text"
                 if code_lang == "text":
                     code_lang = "plain text"
+            index += 1
             continue
 
         if in_code:
             code_lines.append(line)
+            index += 1
             continue
 
         if not line.strip():
             flush_paragraph(paragraph, blocks)
+            index += 1
+            continue
+
+        if line.strip().startswith("|") and line.strip().endswith("|"):
+            flush_paragraph(paragraph, blocks)
+            table_lines: list[str] = []
+            while index < len(lines):
+                candidate = lines[index].strip()
+                if not (candidate.startswith("|") and candidate.endswith("|")):
+                    break
+                table_lines.append(candidate)
+                index += 1
+            table = notion_table_block(table_lines)
+            if table:
+                blocks.append(table)
+            else:
+                for table_line in table_lines:
+                    paragraph.append(table_line)
             continue
 
         if line.startswith("# "):
@@ -305,6 +405,19 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict]:
         elif line.startswith("> "):
             flush_paragraph(paragraph, blocks)
             blocks.append(notion_text_block("quote", line[2:].strip()))
+        elif re.match(r"^- \[[ xX]\] ", line):
+            flush_paragraph(paragraph, blocks)
+            checked = line[3].lower() == "x"
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": "to_do",
+                    "to_do": {
+                        "rich_text": notion_rich_text(line[6:].strip()),
+                        "checked": checked,
+                    },
+                }
+            )
         elif line.startswith("- "):
             flush_paragraph(paragraph, blocks)
             blocks.append(notion_text_block("bulleted_list_item", line[2:].strip()))
@@ -316,6 +429,8 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict]:
             blocks.append({"object": "block", "type": "divider", "divider": {}})
         else:
             paragraph.append(line)
+
+        index += 1
 
     flush_paragraph(paragraph, blocks)
     return blocks[:95]
