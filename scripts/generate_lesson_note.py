@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -87,6 +88,39 @@ def collect_comments(base: Path) -> str:
     return "\n".join(lines[:200])
 
 
+def collect_latest_commit_diff(base: Path) -> str:
+    """Return only the changes introduced by the latest pushed commit."""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(base),
+                "diff",
+                "--find-renames",
+                "--unified=5",
+                "HEAD^",
+                "HEAD",
+                "--",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return f"직전 커밋과 비교할 수 없음: {exc}"
+
+    diff = result.stdout.strip()
+    if not diff:
+        return "이번 커밋에서 텍스트 코드 변경분을 찾지 못함."
+    if len(diff) > MAX_TOTAL_CHARS:
+        return diff[:MAX_TOTAL_CHARS] + "\n... 변경분 길이 제한으로 이후 내용 생략 ..."
+    return diff
+
+
 def build_prompt() -> str:
     repo = read_env("GITHUB_REPOSITORY", required=False, default="unknown/repo")
     sha = read_env("GITHUB_SHA", required=False, default="unknown")
@@ -96,14 +130,18 @@ def build_prompt() -> str:
     student_context = collect_code_context(STUDENT_REF_DIR, "우수 학생 참고 코드")
     instructor_context = collect_code_context(INSTRUCTOR_REF_DIR, "강사님 참고 코드")
     comment_context = collect_comments(CURRENT_DIR)
+    latest_diff = collect_latest_commit_diff(CURRENT_DIR)
 
     return f"""
 너는 C언어 수업 쉬는시간 정리노트를 만드는 튜터다.
 
 목표:
-- 사용자가 매 교시 끝에 GitHub에 push한 최신 코드를 기준으로 한 교시 정리노트를 만든다.
+- 직전 커밋(HEAD^)과 방금 push한 커밋(HEAD)의 차이를 기준으로 한 교시 정리노트를 만든다.
+- 이번 push에서 새로 추가, 수정, 삭제된 내용만 노트의 중심으로 설명한다.
+- 변경되지 않은 기존 코드는 변경분을 이해하는 데 꼭 필요한 경우에만 짧게 언급한다.
+- 최신 코드 전체를 처음부터 다시 설명하지 않는다.
 - 쉬는시간에 바로 읽고 다음 수업을 따라갈 수 있어야 한다.
-- 최종 코드 설명이 아니라 이번 교시의 구현 흐름과 현재 코드 상태를 정리한다.
+- 최종 코드 전체 설명이 아니라 이번 교시에서 달라진 구현 흐름과 영향을 정리한다.
 - 강사님/우수 학생 코드와 비교해서 부족한 부분을 제안한다.
 - 참고 코드가 최신이 아니거나 관련 파일이 부족하면 "참고 코드 최신성 부족"을 표시한다.
 - 내 코드가 미완성이면 "미완성 코드 있음"을 표시하고, 주석과 코드 흐름을 근거로 제안 코드를 작성한다.
@@ -120,15 +158,21 @@ def build_prompt() -> str:
 반드시 포함할 섹션:
 # C언어 쉬는시간 정리노트
 ## 0. 이번 교시 한 줄 요약
-## 1. 이번 교시에 한 작업 순서
-## 2. 현재 코드가 하는 일
-## 3. 핵심 코드 흐름
-## 4. 이번 교시에 배운 C언어 개념
-## 5. 내 코드 현재 상태 점검
+## 1. 이번 push에서 바뀐 내용
+## 2. 새로 추가된 코드
+## 3. 수정 또는 삭제된 코드
+## 4. 변경 후 코드 흐름
+## 5. 이번 변경에서 배운 C언어 개념
 ## 6. 강사님/우수 학생 코드와 비교
 ## 7. 미완성 코드 또는 놓친 부분
 ## 8. 다음 교시 시작 전 체크
 ## 9. 마지막 한 문장 복습
+
+작성 규칙:
+- 아래 `이번 push 변경분`의 `+` 줄과 `-` 줄을 최우선 근거로 사용한다.
+- 변경된 파일명, 함수명, 변수명과 바뀐 동작을 구체적으로 적는다.
+- 추가되지 않은 기존 기능을 이번에 배운 내용처럼 설명하지 않는다.
+- 변경분이 작으면 노트도 짧게 작성한다. 분량을 채우려고 전체 코드를 반복 설명하지 않는다.
 
 저장소 정보:
 - repo: {repo}
@@ -137,6 +181,14 @@ def build_prompt() -> str:
 
 내 코드 주석 메모:
 {comment_context}
+
+## 이번 push 변경분 (HEAD^ -> HEAD)
+
+```diff
+{latest_diff}
+```
+
+아래 최신 코드 전체는 변경분의 앞뒤 맥락을 확인할 때만 참고한다.
 
 {current_context}
 
