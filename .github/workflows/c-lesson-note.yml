@@ -2,7 +2,8 @@ name: C Lesson Break Note
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # Avoid the busiest minute boundaries on GitHub-hosted runners.
+    - cron: "2-59/5 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
